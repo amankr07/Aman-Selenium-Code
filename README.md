@@ -1,0 +1,110 @@
+# Aman-Selenium-Code
+
+/* Exact Match Generic Methods - Start */
+private static Set<String> fetchDuplicates(String objName, String fieldName){
+    Set<String> duplicateDataSet = new Set<String>();
+    for(AggregateResult groupedResult : Database.query('SELECT Count(Id), ' + fieldName + ' FROM ' + objName + ' GROUP BY ' + fieldName + ' HAVING Count(Id) > 1 ORDER BY Count(Id) DESC')){
+        duplicateDataSet.add(String.valueOf(groupedResult.get(fieldName)));
+    }
+	duplicateDataSet.remove(null);
+    return duplicateDataSet;
+}
+
+private static String formExactMatchInClause(Set<String> duplicateDataSet){
+    String inClauseStr = '(';
+    for(String duplicateData : duplicateDataSet){
+        inClauseStr += '\'' + duplicateData + '\', ';
+    }
+    inClauseStr = inClauseStr.substring(0, inClauseStr.length() - 2) + ')';
+    return inClauseStr;
+}
+/* Exact Match Generic Methods - End */
+
+/* Account Fuzzy Match Methods - Start */
+private static Set<String> fetchDuplicateAccNameUsingFuzzyMatch(){
+    Map<String, Map<String, Account>> duplicateNameVsAccIdAndAccMap = new Map<String, Map<String, Account>>();
+    StaticResource exclusionListSR = [SELECT Id, Body FROM StaticResource WHERE Name = 'ExclusionList'];
+    List<String> exclusionList = new List<String>();
+    exclusionList.addAll((exclusionListSR.Body.toString().toLowerCase()).split(','));
+    for(Account acc : [SELECT Id, Name, Website FROM Account LIMIT 40000]){
+        String name = acc.Name.toLowerCase();
+        //name = name.replaceAll('[^a-zA-Z0-9\\s+]', '').trim(); //For removing special characters
+        //For removing common words
+        List<String> accNameWordsSplitList = new List<String>();
+        accNameWordsSplitList.addAll(name.split(' '));
+        if(exclusionList.contains(accNameWordsSplitList.get(accNameWordsSplitList.size() - 1))){
+            accNameWordsSplitList.remove(accNameWordsSplitList.size() - 1);
+            name = String.join(accNameWordsSplitList, ' ');
+        }
+        /*if(name.split(' ').size() > 1){
+            name = name.substring(0, name.lastIndexOf(' '));
+        }*/
+        //For grouping the data based on the fuzzy logic
+        Map<String, Account> accIdVsAccMap = new Map<String, Account>();
+        if(duplicateNameVsAccIdAndAccMap.containsKey(name)){
+            accIdVsAccMap = duplicateNameVsAccIdAndAccMap.get(name);
+        }
+        accIdVsAccMap.put(acc.Id, acc);
+        duplicateNameVsAccIdAndAccMap.put(name, accIdVsAccMap);
+    }
+    //Cleaning the singleton data
+    Map<String, Account> dupelicateAccIdVsAccMap = new Map<String, Account>();
+    for(String keyword : duplicateNameVsAccIdAndAccMap.keySet()){
+        if(duplicateNameVsAccIdAndAccMap.get(keyword).values().size() > 1){
+            dupelicateAccIdVsAccMap.putAll(duplicateNameVsAccIdAndAccMap.get(keyword));
+        }
+    }
+    duplicateNameVsAccIdAndAccMap.clear();
+    return dupelicateAccIdVsAccMap.keySet();
+}
+/* Account Fuzzy Match Methods - End */
+
+/* Account Duplicate Checking (Website) - Start */
+Set<String> fetchDuplicateAccWebsiteSet = fetchDuplicates('Account', 'Website');
+String accWebsiteInClauseStr = formExactMatchInClause(fetchDuplicateAccWebsiteSet);
+fetchDuplicateAccWebsiteSet.clear();
+
+String duplicateAccWebsiteQuery = 'SELECT Id, Name, Website, Owner.Name, Phone, Fax, BillingAddress, CreatedBy.Name, LastModifiedBy.Name FROM Account WHERE Website IN ' + accWebsiteInClauseStr + ' ORDER BY Website ASC';
+system.debug('Account Website : ' + duplicateAccWebsiteQuery);
+
+String duplicateAccWebsiteRecordsStr = '\n';
+for(Account acc : Database.query(duplicateAccWebsiteQuery)){
+    duplicateAccWebsiteRecordsStr += 'Name: ' + acc.Name
+        + ', Id: ' + acc.Id
+        + ', Owner.Name: ' + acc.Owner.Name
+        + ', Website: ' + acc.Website
+        + ', Phone: ' + acc.Phone
+        + ', Fax: ' + acc.Fax
+        + ', Billing Address: ' + acc.BillingAddress
+        + ', CreatedBy.Name: ' + acc.CreatedBy.Name
+        + ', LastModifiedBy.Name: ' + acc.LastModifiedBy.Name + '\n';
+}
+
+system.debug('\n\n\nDuplicate Account Data wrt Website: \n\n\n' + duplicateAccWebsiteRecordsStr);
+duplicateAccWebsiteRecordsStr = '';
+/* Account Duplicate Checking (Website) - End */
+
+/* Account Duplicate Checking (Name) - Start */
+Set<String> fetchDuplicateAccNameSet = fetchDuplicateAccNameUsingFuzzyMatch();
+String accNameInClauseStr = formExactMatchInClause(fetchDuplicateAccNameSet);
+fetchDuplicateAccNameSet.clear();
+
+String duplicateAccNameQuery = 'SELECT Id, Name, Website, Owner.Name, Phone, Fax, BillingAddress, CreatedBy.Name, LastModifiedBy.Name FROM Account WHERE Id IN ' + accNameInClauseStr + ' ORDER BY Name ASC';
+system.debug('Account : ' + duplicateAccNameQuery);
+
+String duplicateAccNameRecordsStr = '\n';
+for(Account acc : Database.query(duplicateAccNameQuery)){
+    duplicateAccNameRecordsStr += 'Name: ' + acc.Name
+        + ', Id: ' + acc.Id
+        + ', Owner.Name: ' + acc.Owner.Name
+        + ', Website: ' + acc.Website
+        + ', Phone: ' + acc.Phone
+        + ', Fax: ' + acc.Fax
+        + ', Billing Address: ' + acc.BillingAddress
+        + ', CreatedBy.Name: ' + acc.CreatedBy.Name
+        + ', LastModifiedBy.Name: ' + acc.LastModifiedBy.Name + '\n';
+}
+
+system.debug('\n\n\nDuplicate Account Data wrt Name: \n\n\n' + duplicateAccNameRecordsStr);
+duplicateAccNameRecordsStr = '';
+/* Account Duplicate Checking (Name) - End */
